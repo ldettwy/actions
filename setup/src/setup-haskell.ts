@@ -21,18 +21,22 @@ export default async function run(
 ): Promise<void> {
   try {
     core.info('Preparing to setup a Haskell environment');
-    const os = process.platform as OS;
-    const opts = getOpts(getDefaults(os), os, inputs);
+    const os = require('os');
+    const platform = process.platform as OS;
+    const release = os.release;
+    const ghc = opts.ghc.resolved;
+    const opts = getOpts(getDefaults(platform), platform, inputs);
 
     for (const [t, {resolved}] of Object.entries(opts).filter(o => o[1].enable))
       await core.group(`Installing ${t} version ${resolved}`, async () =>
-        installTool(t as Tool, resolved, os)
+        installTool(t as Tool, resolved, platform)
       );
 
     if (opts.stack.setup)
-      await core.group('Pre-installing GHC with stack', async () =>
-        exec('stack', ['setup', opts.ghc.resolved])
-      );
+      await core.group('Pre-installing GHC with stack', async () => {
+        await exec('stack', ['setup', ghc]);
+        core.setOutput('stack-cache-key', `stack-${platform}-${release}-${ghc}`);
+      });
 
     if (opts.cabal.enable)
       await core.group('Setting up cabal', async () => {
@@ -47,6 +51,7 @@ export default async function run(
         }
 
         if (!opts.stack.enable) await exec('cabal update');
+        core.setOutput('cabal-cache-key', `cabal-${platform}-${release}-${ghc}`);
       });
 
     core.info(`##[add-matcher]${path.join(__dirname, '..', 'matcher.json')}`);
